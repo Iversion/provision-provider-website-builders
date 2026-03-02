@@ -103,7 +103,14 @@ class Provider extends Category implements ProviderInterface
     public function login(AccountIdentifier $params): LoginResult
     {
         try {
-            $url = $this->api()->login($params->domain_name ?? (string)$params->account_reference);
+            $resellerClientAccountId = isset($params->site_builder_user_id)
+                ? (int)$params->site_builder_user_id
+                : null;
+
+            $url = $this->api()->login(
+                $params->domain_name ?? (string)$params->account_reference,
+                $resellerClientAccountId
+            );
 
             return new LoginResult(['login_url' => $url]);
         } catch (Throwable $e) {

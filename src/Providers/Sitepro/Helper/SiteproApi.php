@@ -35,13 +35,39 @@ class SiteproApi
      */
     public function createSession(string $domain, bool $more = false, array $extraBody = []): array
     {
+        $publishType = $this->configuration->publish_type ?? 'http';
+
         $body = [
-            'type' => 'http',
+            'type' => $publishType,
             'domain' => $domain,
-            'apiUrl' => $this->configuration->api_url ?? "https://site.pro/api/",
-            'username' => $this->configuration->username,
-            'password' => $this->configuration->password,
         ];
+
+        switch ($publishType) {
+            case 'external':
+                $body['apiUrl']    = $this->configuration->external_server;
+                $body['username']  = $this->configuration->publish_username;
+                $body['password']  = $this->configuration->publish_password;
+                $body['uploadDir'] = $this->configuration->external_upload_dir;
+                break;
+
+            case 'ssh':
+                $body['apiUrl']    = $this->configuration->ssh_server;
+                $body['username']  = $this->configuration->publish_username;
+                $body['password']  = $this->configuration->publish_password;
+                $body['uploadDir'] = $this->configuration->ssh_upload_dir;
+                break;
+
+            case 'local':
+                $body['uploadDir'] = $this->configuration->local_upload_dir;
+                break;
+
+            case 'internal':
+            case 'http':
+            default:
+                $body['username'] = $this->configuration->publish_username;
+                $body['password'] = $this->configuration->publish_password;
+                break;
+        }
 
         if ($more) {
             $body['more'] = true;
@@ -132,11 +158,21 @@ class SiteproApi
 
     protected function getResponseErrorMessage($responseData): ?string
     {
-        if (isset($responseData['error'])) {
-            return $responseData['error'];
+        if (!isset($responseData['error'])) {
+            return null;
         }
 
-        return null;
+        $error = $responseData['error'];
+
+        if (is_string($error)) {
+            return $error;
+        }
+
+        if (is_array($error) && isset($error['message'])) {
+            return $error['message'];
+        }
+
+        return 'Unknown error';
     }
 
     /**
@@ -152,6 +188,10 @@ class SiteproApi
             'clientId' => isset($params->customer_id) ? (string)$params->customer_id : null,
             'clientEmail' => $params->customer_email ?? null,
         ]);
+
+        if ($this->configuration->create_api_url) {
+            $sessionBody['apiUrl'] = $this->configuration->create_api_url;
+        }
 
         $this->createSession($params->domain_name, true, $sessionBody);
 
@@ -192,7 +232,13 @@ class SiteproApi
      */
     public function getInfo(string $domain): array
     {
-        $this->createSession($domain, true);
+        $extraBody = [];
+
+        if ($this->configuration->get_info_api_url) {
+            $extraBody['apiUrl'] = $this->configuration->get_info_api_url;
+        }
+
+        $this->createSession($domain, true, $extraBody);
 
         $settings = $this->makeRequest('website/get-settings', null, null, 'POST', true);
         $domainsInfo = $this->makeRequest('hosting-accounts/get-domains', null, ['domain' => $domain], 'POST');
@@ -241,7 +287,13 @@ class SiteproApi
      */
     public function terminate(string $domain): void
     {
-        $this->createSession($domain, true);
+        $extraBody = [];
+
+        if ($this->configuration->terminate_api_url) {
+            $extraBody['apiUrl'] = $this->configuration->terminate_api_url;
+        }
+
+        $this->createSession($domain, true, $extraBody);
 
         $this->makeRequest('delete-site', null, ['domain' => $domain], 'POST', true);
     }
@@ -251,9 +303,19 @@ class SiteproApi
      *
      * @throws \GuzzleHttp\Exception\GuzzleException
      */
-    public function login(string $domain): string
+    public function login(string $domain, ?int $resellerClientAccountId = null): string
     {
-        $response = $this->createSession($domain);
+        $extraBody = [];
+
+        if ($this->configuration->login_api_url) {
+            $extraBody['apiUrl'] = $this->configuration->login_api_url;
+        }
+
+        if ($resellerClientAccountId !== null) {
+            $extraBody['resellerClientAccountId'] = $resellerClientAccountId;
+        }
+
+        $response = $this->createSession($domain, false, $extraBody);
 
         return $response['url'];
     }
